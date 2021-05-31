@@ -30,6 +30,9 @@ int ipsec_in_inline_init(void);
 int ipsec_out_inline_init(void);
 
 int ipsec_suite_init(void);
+int ipsec_suite_plain_init(void);
+int ipsec_suite_sched_init(void);
+int ipsec_suite_term(void);
 int ipsec_in_term(void);
 int ipsec_out_term(void);
 
@@ -42,6 +45,8 @@ struct suite_context_s {
 	odp_queue_t default_queue;
 	odp_queue_t queue;
 	odp_pktio_t pktio;
+	odp_queue_type_t q_type;
+	odp_event_t (*dest_queue_deq)(void);
 };
 
 extern struct suite_context_s suite_context;
