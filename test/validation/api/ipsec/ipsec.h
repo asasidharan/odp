@@ -46,7 +46,7 @@ struct suite_context_s {
 	odp_queue_t queue;
 	odp_pktio_t pktio;
 	odp_queue_type_t q_type;
-	odp_event_t (*dest_queue_deq)(void);
+	odp_event_t (*dest_queue_deq)(uint64_t wait_ns);
 };
 
 extern struct suite_context_s suite_context;

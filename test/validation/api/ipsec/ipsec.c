@@ -365,9 +365,7 @@ void ipsec_sa_destroy(odp_ipsec_sa_t sa)
 	CU_ASSERT_EQUAL(ODP_IPSEC_OK, odp_ipsec_sa_disable(sa));
 
 	if (ODP_QUEUE_INVALID != suite_context.queue) {
-		do {
-			event = suite_context.dest_queue_deq();
-		} while (event == ODP_EVENT_INVALID);
+		event = suite_context.dest_queue_deq(ODP_TIME_MIN_IN_NS);
 
 		CU_ASSERT(odp_event_is_valid(event) == 1);
 		CU_ASSERT_EQUAL(ODP_EVENT_IPSEC_STATUS, odp_event_type(event));
@@ -525,20 +523,44 @@ static int send_pkts(const ipsec_test_part part[], int num_part)
 	return num_part;
 }
 
+static odp_event_t sched_queue_deq(odp_queue_t queue, uint64_t wait_ns)
+{
+	uint64_t wait = odp_schedule_wait_time(wait_ns);
+	odp_queue_t from_queue = ODP_QUEUE_INVALID;
+	odp_event_t event;
+
+	event = odp_schedule(&from_queue, wait);
+
+	if (event != ODP_EVENT_INVALID)
+		CU_ASSERT(queue == from_queue);
+
+	return event;
+}
+
+static odp_event_t plain_queue_deq(odp_queue_t queue, uint64_t wait_ns)
+{
+	odp_time_t cur, wait, next;
+	odp_event_t event;
+
+	wait = odp_time_local_from_ns(wait_ns);
+	next = odp_time_sum(odp_time_local(), wait);
+
+	do {
+		event = odp_queue_deq(queue);
+		cur = odp_time_local();
+	} while (event == ODP_EVENT_INVALID && odp_time_cmp(next, cur) >= 0);
+
+	return event;
+}
+
 static odp_event_t recv_event(odp_queue_t queue)
 {
 	odp_event_t event;
 
-	if (odp_queue_type(queue) == ODP_QUEUE_TYPE_PLAIN) {
-		event = odp_queue_deq(queue);
-	} else {
-		odp_queue_t from_queue = ODP_QUEUE_INVALID;
-
-		event = odp_schedule(&from_queue, ODP_SCHED_NO_WAIT);
-
-		if (event != ODP_EVENT_INVALID)
-			CU_ASSERT(queue == from_queue);
-	}
+	if (odp_queue_type(queue) == ODP_QUEUE_TYPE_PLAIN)
+		event = plain_queue_deq(queue, ODP_TIME_MIN_IN_NS);
+	else
+		event = sched_queue_deq(queue, ODP_TIME_MIN_IN_NS);
 
 	return event;
 }
@@ -546,7 +568,6 @@ static odp_event_t recv_event(odp_queue_t queue)
 /* Receive async inbound packet */
 static odp_event_t recv_pkt_async_inbound(odp_ipsec_op_status_t status)
 {
-	odp_event_t event;
 	odp_queue_t queue;
 
 	/*
@@ -558,11 +579,7 @@ static odp_event_t recv_pkt_async_inbound(odp_ipsec_op_status_t status)
 	else
 		queue = suite_context.default_queue;
 
-	do {
-		event = recv_event(queue);
-	} while (event == ODP_EVENT_INVALID);
-
-	return event;
+	return recv_event(queue);
 }
 
 /* Receive inline processed packets */
@@ -596,7 +613,7 @@ static int recv_pkts_inline(const ipsec_test_part *part,
 			continue;
 		}
 
-		ev = suite_context.dest_queue_deq();
+		ev = suite_context.dest_queue_deq(0);
 		if (ODP_EVENT_INVALID != ev) {
 			odp_packet_t pkt;
 			int num_pkts = 0;
@@ -727,9 +744,7 @@ static int ipsec_send_out_one(const ipsec_test_part *part,
 			odp_event_t event;
 			odp_event_subtype_t subtype;
 
-			do {
-				event = suite_context.dest_queue_deq();
-			} while (event == ODP_EVENT_INVALID);
+			event = suite_context.dest_queue_deq(ODP_TIME_MIN_IN_NS);
 
 			CU_ASSERT(odp_event_is_valid(event) == 1);
 			CU_ASSERT_EQUAL(ODP_EVENT_PACKET,
@@ -826,7 +841,7 @@ static int ipsec_send_out_one(const ipsec_test_part *part,
 				continue;
 			}
 
-			ev = suite_context.dest_queue_deq();
+			ev = suite_context.dest_queue_deq(0);
 			if (ODP_EVENT_INVALID != ev) {
 				CU_ASSERT(odp_event_is_valid(ev) == 1);
 				CU_ASSERT_EQUAL(ODP_EVENT_PACKET,
@@ -1124,14 +1139,14 @@ static odp_queue_t plain_queue_create(const char *name)
 	return odp_queue_create(name, NULL);
 }
 
-static odp_event_t sched_dest_queue_deq(void)
+static odp_event_t sched_dest_queue_deq(uint64_t wait)
 {
-	return odp_schedule(NULL, ODP_SCHED_NO_WAIT);
+	return sched_queue_deq(suite_context.queue, wait);
 }
 
-static odp_event_t plain_dest_queue_deq(void)
+static odp_event_t plain_dest_queue_deq(uint64_t wait_ns)
 {
-	return odp_queue_deq(suite_context.queue);
+	return plain_queue_deq(suite_context.queue, wait_ns);
 }
 
 int ipsec_suite_plain_init(void)
